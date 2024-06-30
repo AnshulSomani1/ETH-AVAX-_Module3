@@ -1,0 +1,110 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract CustomCoin {
+    string public coinName;
+    string public coinSymbol;
+    uint8 public coinDecimals;
+    uint256 public totalSupply;
+    address public contractAdmin;
+
+    mapping(address => uint256) public accountBalances;
+    mapping(address => mapping(address => uint256)) public spendingLimits;
+
+    event Sent(address indexed sender, address indexed receiver, uint256 amount);
+    event Authorized(address indexed owner, address indexed spender, uint256 amount);
+    event Created(address indexed recipient, uint256 amount);
+    event Destroyed(address indexed holder, uint256 amount);
+
+    modifier onlyAdmin() {
+        require(msg.sender == contractAdmin, "Not authorized");
+        _;
+    }
+
+    constructor(
+        string memory _coinName,
+        string memory _coinSymbol,
+        uint8 _coinDecimals,
+        uint256 _initialSupply
+    ) {
+        coinName = _coinName;
+        coinSymbol = _coinSymbol;
+        coinDecimals = _coinDecimals;
+        totalSupply = _initialSupply * 10**uint256(_coinDecimals);
+        contractAdmin = msg.sender;
+        accountBalances[contractAdmin] = totalSupply;
+    }
+
+    function sendCoins(address _receiver, uint256 _amount) external {
+        require(_receiver != address(0), "Invalid address");
+        require(accountBalances[msg.sender] >= _amount, "Insufficient funds");
+
+        accountBalances[msg.sender] -= _amount;
+        accountBalances[_receiver] += _amount;
+
+        emit Sent(msg.sender, _receiver, _amount);
+    }
+
+    function authorizeSpender(address _spender, uint256 _amount) external {
+        require(_spender != address(0), "Invalid spender");
+
+        spendingLimits[msg.sender][_spender] = _amount;
+
+        emit Authorized(msg.sender, _spender, _amount);
+    }
+
+    function transferFromAccount(
+        address _from,
+        address _to,
+        uint256 _amount
+    ) external {
+        require(_from != address(0), "Invalid sender");
+        require(_to != address(0), "Invalid receiver");
+        require(accountBalances[_from] >= _amount, "Insufficient balance");
+        require(spendingLimits[_from][msg.sender] >= _amount, "Allowance exceeded");
+
+        accountBalances[_from] -= _amount;
+        accountBalances[_to] += _amount;
+        spendingLimits[_from][msg.sender] -= _amount;
+
+        emit Sent(_from, _to, _amount);
+    }
+
+    function mintCoins(address _recipient, uint256 _amount) external onlyAdmin {
+        require(_recipient != address(0), "Invalid address");
+        require(_amount > 0, "Amount must be greater than zero");
+
+        totalSupply += _amount;
+        accountBalances[_recipient] += _amount;
+
+        emit Created(_recipient, _amount);
+    }
+
+    function burnCoins(uint256 _amount) external {
+        require(accountBalances[msg.sender] >= _amount, "Insufficient balance");
+        require(_amount > 0, "Amount must be greater than zero");
+
+        totalSupply -= _amount;
+        accountBalances[msg.sender] -= _amount;
+
+        emit Destroyed(msg.sender, _amount);
+    }
+
+    function increaseSpendingLimit(address _spender, uint256 _addedValue) external {
+        require(_spender != address(0), "Invalid spender");
+
+        spendingLimits[msg.sender][_spender] += _addedValue;
+
+        emit Authorized(msg.sender, _spender, spendingLimits[msg.sender][_spender]);
+    }
+
+    function decreaseSpendingLimit(address _spender, uint256 _subtractedValue) external {
+        require(_spender != address(0), "Invalid spender");
+        uint256 currentAllowance = spendingLimits[msg.sender][_spender];
+        require(currentAllowance >= _subtractedValue, "Allowance below zero");
+
+        spendingLimits[msg.sender][_spender] = currentAllowance - _subtractedValue;
+
+        emit Authorized(msg.sender, _spender, spendingLimits[msg.sender][_spender]);
+    }
+}
